@@ -23,3 +23,8 @@ yfinance>=0.2.18
 # Utilities
 python-dateutil>=2.8.0
 requests>=2.31.0
+
+# Sentiment Analysis
+textblob>=0.18.0
+vaderSentiment>=3.3.2
+feedparser>=6.0.10
