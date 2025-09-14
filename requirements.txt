@@ -1,0 +1,25 @@
+# Core Data Science Libraries
+pandas>=2.0.0
+numpy>=1.24.0
+matplotlib>=3.6.0
+seaborn>=0.12.0
+
+# Machine Learning Libraries
+scikit-learn>=1.3.0
+statsmodels>=0.14.0
+
+# Deep Learning (Optional - LSTM will work without this)
+tensorflow>=2.13.0
+
+# Web Framework
+streamlit>=1.28.0
+
+# Interactive Plotting
+plotly>=5.15.0
+
+# Financial Data
+yfinance>=0.2.18
+
+# Utilities
+python-dateutil>=2.8.0
+requests>=2.31.0
