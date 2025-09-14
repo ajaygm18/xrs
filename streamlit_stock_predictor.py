@@ -530,7 +530,7 @@ class StockPredictor:
             y.append(data[i, 0])
         return np.array(X), np.array(y)
     
-    def lstm_prediction(self, data, sequence_length=30, currency_symbol="$", sentiment_data=None):
+    def lstm_prediction(self, data, sequence_length=30, currency_symbol="$", sentiment_config=None):
         """LSTM model with sentiment integration and proper validation to prevent overfitting"""
         try:
             st.info("🧠 Starting LSTM Neural Network Training...")
@@ -717,35 +717,41 @@ class StockPredictor:
             next_day_prediction = scaler.inverse_transform(next_day_scaled)[0, 0]
             
             # Integrate sentiment analysis if available
-            if sentiment_data and sentiment_data.get('confidence', 0) > 0.1:
-                sentiment_score = sentiment_data.get('overall_sentiment', 0.0)
-                sentiment_strength = sentiment_data.get('sentiment_strength', 0.0)
-                sentiment_confidence = sentiment_data.get('confidence', 0.0)
+            if sentiment_config and sentiment_config.get('sentiment_data'):
+                sentiment_data = sentiment_config['sentiment_data']
+                sentiment_weight = sentiment_config.get('sentiment_weight', 1.0)
+                max_adjustment = sentiment_config.get('max_adjustment', 0.03)
                 
-                # Calculate sentiment adjustment factor
-                # Strong positive sentiment can boost prediction by up to 3%
-                # Strong negative sentiment can reduce prediction by up to 3%
-                max_adjustment = 0.03  # 3% maximum adjustment
-                sentiment_adjustment = sentiment_score * sentiment_strength * sentiment_confidence * max_adjustment
-                
-                # Apply sentiment adjustment
-                sentiment_adjusted_prediction = next_day_prediction * (1 + sentiment_adjustment)
-                
-                st.write(f"📰 Sentiment Score: {sentiment_score:.3f}")
-                st.write(f"📊 Sentiment Strength: {sentiment_strength:.3f}")
-                st.write(f"🎯 Sentiment Adjustment: {sentiment_adjustment*100:+.2f}%")
-                st.write(f"💡 Original LSTM: {self.format_currency(next_day_prediction, currency_symbol)}")
-                st.write(f"🎯 Sentiment-Adjusted: {self.format_currency(sentiment_adjusted_prediction, currency_symbol)}")
-                
-                # Use sentiment-adjusted prediction
-                next_day_prediction = sentiment_adjusted_prediction
-                
-                # Adjust accuracy based on sentiment confidence
-                if sentiment_confidence > 0.5:
-                    accuracy += sentiment_confidence * 5  # Boost accuracy by up to 5%
-                    accuracy = min(accuracy, 85)  # Cap at 85%
+                if sentiment_data.get('confidence', 0) > 0.1:
+                    sentiment_score = sentiment_data.get('overall_sentiment', 0.0)
+                    sentiment_strength = sentiment_data.get('sentiment_strength', 0.0)
+                    sentiment_confidence = sentiment_data.get('confidence', 0.0)
+                    
+                    # Calculate sentiment adjustment factor with configurable parameters
+                    sentiment_adjustment = (sentiment_score * sentiment_strength * 
+                                          sentiment_confidence * max_adjustment * sentiment_weight)
+                    
+                    # Apply sentiment adjustment
+                    sentiment_adjusted_prediction = next_day_prediction * (1 + sentiment_adjustment)
+                    
+                    st.write(f"📰 Sentiment Score: {sentiment_score:.3f}")
+                    st.write(f"📊 Sentiment Strength: {sentiment_strength:.3f}")
+                    st.write(f"⚖️ Sentiment Weight: {sentiment_weight:.1f}")
+                    st.write(f"🎯 Sentiment Adjustment: {sentiment_adjustment*100:+.2f}%")
+                    st.write(f"💡 Original LSTM: {self.format_currency(next_day_prediction, currency_symbol)}")
+                    st.write(f"🎯 Sentiment-Adjusted: {self.format_currency(sentiment_adjusted_prediction, currency_symbol)}")
+                    
+                    # Use sentiment-adjusted prediction
+                    next_day_prediction = sentiment_adjusted_prediction
+                    
+                    # Adjust accuracy based on sentiment confidence
+                    if sentiment_confidence > 0.5:
+                        accuracy += sentiment_confidence * 5 * sentiment_weight  # Boost accuracy
+                        accuracy = min(accuracy, 85)  # Cap at 85%
+                else:
+                    st.write("📰 Sentiment data available but confidence too low for adjustment")
             else:
-                st.write("📰 No reliable sentiment data available for adjustment")
+                st.write("📰 No sentiment analysis applied to prediction")
             
             st.write(f"📊 LSTM RMSE: {rmse:.2f}")
             st.write(f"🎯 Final Accuracy: {accuracy:.1f}%")
@@ -1135,6 +1141,29 @@ def main():
         st.write("- RMSE: Average prediction error in dollars")
         st.write("- >50% accuracy is better than random chance")
     
+    # Sentiment Analysis Configuration
+    st.sidebar.header("📰 Sentiment Analysis Settings")
+    
+    with st.sidebar.expander("⚙️ Sentiment Settings"):
+        enable_sentiment = st.checkbox("Enable Sentiment Analysis", value=True, 
+                                      help="Integrate news sentiment into predictions")
+        
+        if enable_sentiment:
+            sentiment_weight = st.slider("Sentiment Impact Weight", 0.1, 1.0, 1.0, 0.1,
+                                       help="How much sentiment affects predictions (1.0 = full impact)")
+            max_sentiment_adjustment = st.slider("Max Sentiment Adjustment (%)", 1.0, 5.0, 3.0, 0.5,
+                                                help="Maximum percentage adjustment from sentiment")
+            
+            st.info("📰 **Sentiment Analysis Information:**")
+            st.write("- Analyzes financial news sentiment")
+            st.write("- Combines TextBlob and VADER sentiment")
+            st.write("- Adjusts LSTM predictions by sentiment score")
+            st.write("- Strong positive sentiment can boost predictions")
+            st.write("- Strong negative sentiment can reduce predictions")
+        else:
+            sentiment_weight = 0.0
+            max_sentiment_adjustment = 0.0
+    
     if st.sidebar.button("🚀 Run Prediction", type="primary"):
         # Initialize predictor
         predictor = StockPredictor()
@@ -1201,10 +1230,14 @@ def main():
         status_text.text("Analyzing market sentiment...")
         progress_bar.progress(0.25)
         
-        sentiment_data = predictor.get_financial_news_sentiment(symbol)
+        sentiment_data = None
+        if enable_sentiment:
+            sentiment_data = predictor.get_financial_news_sentiment(symbol)
+        else:
+            st.info("📰 Sentiment analysis disabled in settings")
         
         # Show sentiment analysis results
-        if sentiment_data and sentiment_data.get('confidence', 0) > 0.1:
+        if sentiment_data and sentiment_data.get('confidence', 0) > 0.1 and enable_sentiment:
             st.subheader("📰 News Sentiment Analysis")
             
             # Create sentiment metrics display
@@ -1252,7 +1285,13 @@ def main():
         
         # Show detailed LSTM section
         with st.expander("🧠 LSTM Training Details", expanded=True):
-            predictions['LSTM'] = predictor.lstm_prediction(data, lstm_sequence, currency_symbol, sentiment_data)
+            # Create sentiment config for LSTM
+            sentiment_config = {
+                'sentiment_data': sentiment_data if enable_sentiment else None,
+                'sentiment_weight': sentiment_weight if enable_sentiment else 0.0,
+                'max_adjustment': max_sentiment_adjustment / 100.0 if enable_sentiment else 0.0
+            }
+            predictions['LSTM'] = predictor.lstm_prediction(data, lstm_sequence, currency_symbol, sentiment_config)
         
         progress_bar.progress(1.0)
         
